@@ -208,8 +208,8 @@ class MainActivity : AppCompatActivity() {
             mime.contains("webp", ignoreCase = true) -> "webp"
             else -> "png"
         }
-        val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return null
-        "data:image/$format;base64,${Base64.encodeToString(bytes, Base64.NO_WRAP)}"
+        val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
+        if (bytes == null) null else "data:image/$format;base64,${Base64.encodeToString(bytes, Base64.NO_WRAP)}"
     } catch (e: Exception) {
         null
     }
