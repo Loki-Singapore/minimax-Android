@@ -11,8 +11,25 @@ android {
         applicationId = "com.loki.minimax"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.1"
+    }
+
+    // 从环境变量读取签名信息（GitHub Actions 中由 workflow 注入；本地缺省时跳过，仍可出未签名包）
+    val keystorePath = System.getenv("SIGNING_KEYSTORE_PATH")
+    val storePassword = System.getenv("SIGNING_STORE_PASSWORD")
+    val keyAlias = System.getenv("SIGNING_KEY_ALIAS")
+
+    signingConfigs {
+        create("release") {
+            if (keystorePath != null && storePassword != null && keyAlias != null) {
+                storeFile = file(keystorePath)
+                this.storePassword = storePassword
+                this.keyAlias = keyAlias
+                // PKCS12 keystore：key 密码与 store 密码相同
+                keyPassword = storePassword
+            }
+        }
     }
 
     buildTypes {
@@ -22,6 +39,12 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            // 提供 keystore 时用固定签名，否则回退默认（未签名 release 不可直接安装）
+            signingConfig = if (keystorePath != null) {
+                signingConfigs.getByName("release")
+            } else {
+                null
+            }
         }
     }
 
