@@ -50,7 +50,8 @@ jobs:
         run: |
           APK=app/build/outputs/apk/release/app-release.apk
           ls -la "$APK"
-          $ANDROID_HOME/build-tools/*/apksigner verify --print-certs "$APK" | head -n 8
+          APKSIGNER=$(ls -1 "$ANDROID_HOME"/build-tools/*/apksigner | tail -1)
+          "$APKSIGNER" verify --print-certs "$APK" | head -n 8
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
