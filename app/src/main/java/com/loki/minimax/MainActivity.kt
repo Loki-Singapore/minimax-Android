@@ -7,7 +7,12 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.util.Base64
+import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup
+import android.widget.ImageView
+import android.widget.LinearLayout
+import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -22,31 +27,42 @@ import com.loki.minimax.data.VideoGenerationRequest
 import com.loki.minimax.databinding.ActivityMainBinding
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.util.UUID
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private val api = MiniMaxApi()
 
-    /** 选中的图片以 data:image/<fmt>;base64,... 形式存放，用于上传。 */
-    private var imageDataUri: String? = null
+    /** 选中的图片：uri 用于预览，dataUri 用于 Base64 上传。 */
+    private data class ImageItem(val id: String, val uri: Uri, val dataUri: String)
+
+    private val imageItems = mutableListOf<ImageItem>()
     private var exoPlayer: ExoPlayer? = null
     private var resultUrl: String? = null
 
-    private val pickImage =
-        registerForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-            if (uri == null) return@registerForActivityResult
-            val dataUri = buildDataUri(uri)
-            if (dataUri == null) {
-                toast("无法读取图片")
+    // 多选图片，上限按参考图最大数量 9。
+    private val pickImages =
+        registerForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(9)) { uris ->
+            if (uris.isNullOrEmpty()) return@registerForActivityResult
+            val maxItems = maxImagesForMode(currentImageMode())
+            val remaining = maxItems - imageItems.size
+            if (remaining <= 0) {
+                toast("已达到本模式图片上限 ($maxItems 张)")
                 return@registerForActivityResult
             }
-            imageDataUri = dataUri
-            binding.imagePreview.setImageURI(uri)
-            binding.imagePreview.visibility = View.VISIBLE
-            binding.removeImageButton.visibility = View.VISIBLE
-            binding.ratioSpinner.isEnabled = false
-            toast("已选择图片，切换为图生视频（首帧）")
+            val toAdd = uris.take(remaining)
+            if (toAdd.size < uris.size) {
+                toast("仅添加前 $remaining 张，超出本模式上限")
+            }
+            toAdd.forEach { uri ->
+                val dataUri = buildDataUri(uri) ?: run {
+                    toast("无法读取其中一张图片，已跳过")
+                    return@forEach
+                }
+                imageItems.add(ImageItem(UUID.randomUUID().toString(), uri, dataUri))
+            }
+            refreshImagesUi()
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -59,17 +75,29 @@ class MainActivity : AppCompatActivity() {
         binding.resolutionSpinner.setSelection(1) // 默认 2K
 
         binding.pickImageButton.setOnClickListener {
-            pickImage.launch(
+            pickImages.launch(
                 PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
             )
         }
-        binding.removeImageButton.setOnClickListener {
-            imageDataUri = null
-            binding.imagePreview.setImageDrawable(null)
-            binding.imagePreview.visibility = View.GONE
-            binding.removeImageButton.visibility = View.GONE
-            binding.ratioSpinner.isEnabled = true
+        binding.clearImagesButton.setOnClickListener {
+            imageItems.clear()
+            refreshImagesUi()
         }
+
+        // 切换图片模式时清空已选图片（两种 role 互斥，避免混用）。
+        binding.imageModeSpinner.onItemSelectedListener =
+            object : android.widget.AdapterView.OnItemSelectedListener {
+                override fun onItemSelected(
+                    parent: android.widget.AdapterView<*>?, v: View?, p: Int, id: Long
+                ) {
+                    if (imageItems.isNotEmpty()) {
+                        imageItems.clear()
+                        refreshImagesUi()
+                        toast("已切换图片模式，清空已选图片")
+                    }
+                }
+                override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
+            }
 
         binding.generateButton.setOnClickListener { generate() }
 
@@ -83,7 +111,13 @@ class MainActivity : AppCompatActivity() {
                 toast("已复制链接")
             }
         }
+
+        refreshImagesUi()
     }
+
+    /** 0=首帧/首尾帧（i2va，≤2），1=参考图（r2va，≤9）。 */
+    private fun currentImageMode(): Int = binding.imageModeSpinner.selectedItemPosition
+    private fun maxImagesForMode(mode: Int): Int = if (mode == 0) 2 else 9
 
     private fun generate() {
         val apiKey = binding.apiKeyEdit.text.toString().trim()
@@ -94,21 +128,27 @@ class MainActivity : AppCompatActivity() {
         saveApiKey(apiKey)
 
         val content = mutableListOf(ContentItem(type = "text", text = prompt))
-        val hasImage = imageDataUri != null
+        val hasImage = imageItems.isNotEmpty()
         if (hasImage) {
-            // 图生视频：图片以 Base64 data URI 上传，作为首帧
-            content.add(
-                ContentItem(
-                    type = "image_url",
-                    imageUrl = ImageUrl(imageDataUri!!),
-                    role = "first_frame"
-                )
-            )
+            val mode = currentImageMode()
+            when (mode) {
+                0 -> {
+                    // 图生视频：1 张=first_frame；2 张=first_frame+last_frame
+                    content.add(imageItem(imageItems[0], "first_frame"))
+                    if (imageItems.size >= 2) {
+                        content.add(imageItem(imageItems[1], "last_frame"))
+                    }
+                }
+                1 -> {
+                    // 多模态参考：全部 reference_image
+                    imageItems.forEach { content.add(imageItem(it, "reference_image")) }
+                }
+            }
         }
 
         val resolution = binding.resolutionSpinner.selectedItem as String
         val duration = (binding.durationSpinner.selectedItem as String).toInt()
-        // 文生视频 ratio 必填且不能为 adaptive；图生视频恒为 adaptive。
+        // 文生视频 ratio 必填且不能为 adaptive；有图片时（两种模式）均按 adaptive 处理。
         val ratio = if (hasImage) "adaptive" else binding.ratioSpinner.selectedItem as String
 
         val request = VideoGenerationRequest(
@@ -133,6 +173,12 @@ class MainActivity : AppCompatActivity() {
             }
         }
     }
+
+    private fun imageItem(item: ImageItem, role: String) = ContentItem(
+        type = "image_url",
+        imageUrl = ImageUrl(item.dataUri),
+        role = role
+    )
 
     private suspend fun poll(apiKey: String, taskId: String) {
         while (true) {
@@ -197,6 +243,59 @@ class MainActivity : AppCompatActivity() {
     private fun setBusy(busy: Boolean) {
         binding.generateButton.isEnabled = !busy
         binding.progressBar.visibility = if (busy) View.VISIBLE else View.GONE
+    }
+
+    /** 重新渲染缩略图列表、计数、宽高比可用性。 */
+    private fun refreshImagesUi() {
+        binding.imagesContainer.removeAllViews()
+        val hasImage = imageItems.isNotEmpty()
+        binding.imagesScroll.visibility = if (hasImage) View.VISIBLE else View.GONE
+        binding.clearImagesButton.visibility = if (hasImage) View.VISIBLE else View.GONE
+        binding.ratioSpinner.isEnabled = !hasImage
+
+        val max = maxImagesForMode(currentImageMode())
+        binding.imageCountText.text = if (hasImage) "${imageItems.size} / $max" else ""
+
+        imageItems.forEach { item -> binding.imagesContainer.addView(buildThumbnail(item)) }
+    }
+
+    /** 构建一个缩略图项：图片预览 + 下方“删除”按钮。 */
+    private fun buildThumbnail(item: ImageItem): View {
+        val density = resources.displayMetrics.density
+        val sizePx = (96 * density).toInt()
+        val margin = (8 * density).toInt()
+
+        val column = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { marginEnd = margin }
+        }
+
+        val thumb = ImageView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(sizePx, sizePx)
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            setImageURI(item.uri)
+        }
+
+        val remove = TextView(this).apply {
+            text = "删除"
+            textSize = 12f
+            setTextColor(0xFF1976D2.toInt())
+            setPadding(0, margin / 2, 0, 0)
+            setOnClickListener { removeImage(item.id) }
+        }
+
+        column.addView(thumb)
+        column.addView(remove)
+        return column
+    }
+
+    private fun removeImage(id: String) {
+        imageItems.removeAll { it.id == id }
+        refreshImagesUi()
     }
 
     /** 读取选中图片字节并编码为 data:image/<格式>;base64,<Base64>。 */

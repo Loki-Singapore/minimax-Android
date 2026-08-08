@@ -29,4 +29,10 @@
         <item>3:4</item>
         <item>21:9</item>
     </string-array>
+
+    <!-- 图片用途模式：两种 role 互斥，API 不允许 first_frame/last_frame 与 reference_* 混用 -->
+    <string-array name="image_modes">
+        <item>首帧 / 首尾帧（图生视频，最多 2 张）</item>
+        <item>参考图（多模态参考，最多 9 张）</item>
+    </string-array>
 </resources>

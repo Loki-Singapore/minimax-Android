@@ -23,7 +23,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginBottom="12dp"
-            android:text="支持文生视频 / 图生视频（图片以 Base64 上传）"
+            android:text="支持文生视频 / 图生视频 / 多模态参考（图片以 Base64 上传）"
             android:textColor="#888888"
             android:textSize="12sp" />
 
@@ -63,32 +63,66 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="图片用途（可选，留空为文生视频）"
+                android:textSize="12sp" />
+
+            <Spinner
+                android:id="@+id/imageModeSpinner"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:entries="@array/image_modes" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
             android:orientation="horizontal">
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/pickImageButton"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="选择图片 (可选)" />
+                android:text="添加图片" />
 
             <com.google.android.material.button.MaterialButton
-                android:id="@+id/removeImageButton"
+                android:id="@+id/clearImagesButton"
                 style="@style/Widget.MaterialComponents.Button.TextButton"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="8dp"
-                android:text="移除图片"
+                android:text="清空"
                 android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/imageCountText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center_vertical"
+                android:gravity="end"
+                android:textColor="#888888"
+                android:textSize="12sp" />
         </LinearLayout>
 
-        <ImageView
-            android:id="@+id/imagePreview"
+        <HorizontalScrollView
+            android:id="@+id/imagesScroll"
             android:layout_width="match_parent"
-            android:layout_height="200dp"
+            android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
-            android:adjustViewBounds="true"
-            android:scaleType="centerCrop"
-            android:visibility="gone" />
+            android:scrollbars="horizontal"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:id="@+id/imagesContainer"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal" />
+        </HorizontalScrollView>
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -162,7 +196,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="2dp"
-            android:text="图生视频时宽高比自动按图片自适应"
+            android:text="添加图片时宽高比自动按图片自适应 (adaptive)"
             android:textColor="#AAAAAA"
             android:textSize="11sp" />
 
